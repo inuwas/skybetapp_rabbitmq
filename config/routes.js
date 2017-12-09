@@ -5,7 +5,7 @@
  */
 
 const home = require('../app/controllers/home');
-
+const tcp = require('../app/controllers/tcp');
 /**
  * Expose
  */
@@ -13,7 +13,7 @@ const home = require('../app/controllers/home');
 module.exports = function (app, passport) {
 
   app.get('/', home.index);
-
+  app.get('/tcp', tcp.consumerService);
   /**
    * Error handling
    */
