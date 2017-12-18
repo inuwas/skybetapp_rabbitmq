@@ -1,5 +1,38 @@
+'use strict';
 var amqp = require('amqplib/callback_api');
 var q = 'tasks';
+var net = require('net');
+var dataPacket = [];
+var Event = require('../models/event');
+
+/**
+ * Connects TCP service and saves data to mongodb
+ * @param {*} res 
+ */
+var connectToServer = (conn,res) => {
+  // var client = new net.Socket();
+
+  let client = net.createConnection({ port: 8282 }, () => {
+
+    client.write('Test Worked!\r\n');
+  });
+
+  client.on('data', (data) => {
+    // End client after server's final response
+    publisher(conn, data);
+    client.end();
+  });
+
+  client.on('end', () => {
+    // res.json({ message: dataPacket });
+    consumer(conn, res);
+    console.log('Ended');
+  });
+  
+  client.on('close', () => {
+    console.log('Connection closed');
+  });
+};
 
 var bail = (err) => {
   console.error(err);
@@ -7,40 +40,162 @@ var bail = (err) => {
 };
 
 // Publisher
-var publisher = (conn) => {
-  conn.createChannel(on_open);
-  function on_open(err, ch) {
+var publisher = (conn, data) => {
+  let on_open = (err, ch) => {
     if (err != null) bail(err);
-    ch.assertQueue(q);
-    ch.sendToQueue(q, new Buffer('something to do'));
-  }
+    ch.assertQueue(q, { durable: true } );
+    ch.sendToQueue(q, data, { persistent: true });
+  };
+  conn.createChannel(on_open);
 };
 
 // Consumer
-var consumer = (conn) => {
-  var ok = conn.createChannel(on_open);
-  function on_open(err, ch) {
+var consumer = (conn, res) => {
+  let on_open = (err, ch) => {
     if (err != null) bail(err);
     ch.assertQueue(q);
-    ch.consume(q, function(msg) {
+    ch.prefetch(1);
+    
+    ch.consume(q, (msg) => {
       if (msg !== null) {
-        console.log(msg.content.toString());
+        // console.log(msg.content.toString());
+        dataPacket.push(msg.content.toString());
         ch.ack(msg);
       }
-    });
-  }
+    }, { noAck: false });
+  };
+  let ok = conn.createChannel(on_open);
 };
 
 var consumerService = (req, res) => {
   amqp.connect('amqp://localhost', (err, conn) => {
     conn.createChannel((err, ch) => {
       if (err != null) bail(err);
-      consumer(conn);
-      publisher(conn);
-      
+      // consumer(conn);
+      // publisher(conn);
+      connectToServer(conn, res);
     });
   });
 };
- 
+
+var saveToDatabase = (messageType, jsonObject) => {
+  
+};
+var convertToJavaScript = (messageType) => {
+  let returnedObject = {
+    type: '',
+    messageDetails: {}
+  };
+  let messageDetails = {};
+  // check that it has an event
+  messageType.replace('||', '|').replace('| vs |', ' vs ').replace('||', '|');
+  let eventData = splitArray(messageType);
+  messageDetails = jsonEventData(eventData, messageType);
+  if ( messageType.match('event')) {
+    // push messageDetails data to a db
+  }
+  if ( messageType.match('market')) {
+    // push messageDetails data to a db
+  }
+  if ( messageType.match('outcome')) {
+    // push messageDetails data to a db
+  }
+};
+/**
+ * split string with pipe into array
+ * @param {String} pipedString 
+ * @returns Array
+ */
+var splitArray = (pipedString) => {
+  let returnedArray = pipedString.split('|');
+  return returnedArray;
+};
+/**
+ * 
+ * @param {Array} eventData 
+ * @param {String} messageType 
+ * @returns Object
+ */
+var jsonEventData = (eventData, messageType) => {
+  let eventJSONData = {};
+  eventData.forEach((element, index) => {
+    switch (index) {
+      case 0:
+        eventJSONData.header.msgId = element;
+        break;
+      case 1:
+        eventJSONData.header.operation = element;
+        break;
+      case 2:
+        eventJSONData.header.type = element;
+        break;
+      case 3:
+        eventJSONData.header.timestamp = element;
+        break;
+      case 4:
+        if (messageType === 'outcome')
+        {
+          eventJSONData.header.marketId = element;
+        }
+        else {
+          eventJSONData.header.eventId = element;          
+        }
+        break;
+      case 5:
+        if (messageType === 'market') {
+          eventJSONData.header.marketId = element;
+        }
+        else if (messageType === 'outcome') {
+          eventJSONData.header.eventId = element;
+        }
+        else {
+          eventJSONData.header.category = element;
+        }
+        break;
+        case 6:
+        if ((messageType) ? 'market' : 'outcome') {
+          eventJSONData.header.name = element;
+        }
+        else {
+          eventJSONData.header.subCategory = element;
+        }
+        break;
+        case 7:
+        if (messageType === 'market') {
+          eventJSONData.header.displayed = element;
+        }
+        else if (messageType === 'outcome') {
+          eventJSONData.header.price = element;
+        }
+        else {
+          eventJSONData.header.name = element;
+        }
+        break;
+        case 8:
+        if (messageType === 'market') {
+          eventJSONData.header.suspended = element;
+        }
+        else if (messageType === 'outcome') {
+          eventJSONData.header.displayed = element;
+        }
+        else {
+          eventJSONData.header.startTime = element;
+        }
+        break;
+        case 9:
+        if (messageType === 'outcome') {
+          eventJSONData.header.suspended = element;
+        }
+        else if (messageType !== 'market'){
+          eventJSONData.header.displayed = element;
+        }
+        break;
+        case 10:
+          eventJSONData.header.suspended = element;
+        break;
+    }
+  });
+  return eventJSONData;
+};
 module.exports.consumerService = consumerService;
 
