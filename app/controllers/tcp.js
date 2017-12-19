@@ -2,7 +2,7 @@
 var amqp = require('amqplib/callback_api');
 var q = 'tasks';
 var net = require('net');
-var dataPacket = [];
+// var dataPacket = [];
 var Event = require('../models/event').Event;
 var Market = require('../models/event').Market;
 var Outcome = require('../models/event').Outcome;
@@ -51,7 +51,6 @@ var publisher = (conn, data) => {
   conn.createChannel(on_open);
 };
 
-// Consumer
 var consumer = (conn, res) => {
   let on_open = (err, ch) => {
     if (err != null) bail(err);
@@ -62,13 +61,18 @@ var consumer = (conn, res) => {
       if (msg !== null) {
         // console.log(msg.content.toString());
         // dataPacket.push(msg.content.toString());
+        saveToDatabase(msg);
         ch.ack(msg);
       }
     }, { noAck: false });
   };
   let ok = conn.createChannel(on_open);
 };
-
+/**
+ * Runs the RabbitMQ Consumer Service
+ * @param {request} req 
+ * @param {response} res 
+ */
 var consumerService = (req, res) => {
   amqp.connect('amqp://localhost', (err, conn) => {
     conn.createChannel((err, ch) => {
