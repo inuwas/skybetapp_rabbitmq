@@ -3,7 +3,9 @@ var amqp = require('amqplib/callback_api');
 var q = 'tasks';
 var net = require('net');
 var dataPacket = [];
-var Event = require('../models/event');
+var Event = require('../models/event').Event;
+var Market = require('../models/event').Market;
+var Outcome = require('../models/event').Outcome;
 
 /**
  * Connects TCP service and saves data to mongodb
@@ -59,7 +61,7 @@ var consumer = (conn, res) => {
     ch.consume(q, (msg) => {
       if (msg !== null) {
         // console.log(msg.content.toString());
-        dataPacket.push(msg.content.toString());
+        // dataPacket.push(msg.content.toString());
         ch.ack(msg);
       }
     }, { noAck: false });
@@ -78,31 +80,66 @@ var consumerService = (req, res) => {
   });
 };
 
-var saveToDatabase = (messageType, jsonObject) => {
+
+var saveToDatabase = (message) => {
   
-};
-var convertToJavaScript = (messageType) => {
-  let returnedObject = {
-    type: '',
-    messageDetails: {}
-  };
-  let messageDetails = {};
-  // check that it has an event
-  messageType.replace('||', '|').replace('| vs |', ' vs ').replace('||', '|');
-  let eventData = splitArray(messageType);
-  messageDetails = jsonEventData(eventData, messageType);
-  if ( messageType.match('event')) {
-    // push messageDetails data to a db
+  message.replace('||', '|').replace('| vs |', ' vs ').replace('||', '|');
+  let eventData = splitArray(message);
+  let dataType = '';
+  if (message.indexOf('event') != -1) {
+    dataType = 'event';
   }
-  if ( messageType.match('market')) {
-    // push messageDetails data to a db
+  else if (message.indexOf('market') != -1) {
+    dataType = 'market';
   }
-  if ( messageType.match('outcome')) {
-    // push messageDetails data to a db
+  else {
+    dataType = 'outcome';
+  }
+  let messageDetails = convertToJson(eventData, dataType);
+
+  // Store the Event Data
+  switch (dataType) {
+    case 'event': {
+      let newEvent = new Event(messageDetails);
+      // save the new event
+      newEvent.save((error) => {
+        if (error) {
+          throw new Error(error);
+        } else {
+          console.log('Saved');
+        }
+      });
+      break;
+    }
+    case 'market': {
+      // push messageDetails data to a db
+      // Find a related event and push the market to it
+      Event.findOne({ eventID: messageDetails.eventId }).then((theEvent) => {
+        let newMarket = new Market(messageDetails);
+        newMarket.save((error) => {
+          if (error) throw new Error(error);
+          theEvent.markets.push(newMarket._id);
+        }); 
+      }).catch((error) => {
+        throw new Error(error);
+      });
+      break;
+    }
+    case 'outcome':
+      Market.findOne({ marketId: messageDetails.marketId }).then((theMarket) => {
+        let newOutcome = new Outcome(messageDetails);
+        newOutcome.save((error) => {
+          if (error) throw new Error(error);
+          theMarket.outcomes.push(newOutcome._id);
+        });
+      }).catch((error) => {
+        throw new Error(error);
+      });
+      break;
   }
 };
 /**
- * split string with pipe into array
+ * Splits string with pipe into array
  * @param {String} pipedString 
  * @returns Array
  */
@@ -111,12 +148,12 @@ var splitArray = (pipedString) => {
   return returnedArray;
 };
 /**
- * 
+ * Converts String to JSON from pipe delimiter
  * @param {Array} eventData 
  * @param {String} messageType 
  * @returns Object
  */
-var jsonEventData = (eventData, messageType) => {
+var convertToJson = (eventData, messageType) => {
   let eventJSONData = {};
   eventData.forEach((element, index) => {
     switch (index) {

@@ -5,6 +5,7 @@
 
 var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
+mongoose.Promise = require('bluebird');
 
 
 var OutcomeSchema = {
@@ -23,7 +24,7 @@ var OutcomeSchema = {
     suspended: { type: Boolean, default: '' }
   }
 };
-var outcome = mongoose.model('Outcome', OutcomeSchema);
+var Outcome = mongoose.model('Outcome', OutcomeSchema);
 
 var MarketSchema = new Schema ({
   header: {
@@ -39,13 +40,13 @@ var MarketSchema = new Schema ({
     displayed: { type: Boolean, default: '' },
     suspended: { type: Boolean, default: '' }
   },
-  Outcomes: [{
+  outcomes: [{
     type: Schema.ObjectId,
-    ref: 'outcome'
+    ref: 'Outcome'
   }]
 });
 
-var market = mongoose.model('Market', MarketSchema);
+var Market = mongoose.model('Market', MarketSchema);
 
 /**
  * Event Data schema
@@ -67,10 +68,14 @@ var EventSchema = new Schema({
     displayed: { type: Boolean, default: '' },
     suspended: { type: Boolean, default: '' },
   },
-  Markets: [{
+  markets: [{
     type : Schema.ObjectId,
-    ref:'market'
+    ref:'Market'
   }]
 });
 var Event = mongoose.model('Event', EventSchema);
-module.exports.Event = Event;
+module.exports = {
+  Event: Event,
+  Market: Market,
+  Outcome: Outcome
+};
