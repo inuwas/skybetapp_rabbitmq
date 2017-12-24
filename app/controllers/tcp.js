@@ -137,8 +137,10 @@ var saveToDatabase = (messageDetails, dataType) => {
             markets.push(market._id);
             // theEvent.markets.push(market._id);
             theEvent.markets = markets;
-            // return theEvent.save().then().catch(error => console.log(error));
-            return;
+            // Removes VersionError
+            delete theEvent.__v;
+            return theEvent.save().then().catch(error => console.log(error));
+            // return;
           }
           return market;
         }).catch((error) => {
@@ -155,14 +157,17 @@ var saveToDatabase = (messageDetails, dataType) => {
       console.log('messageDetails: ', messageDetails);
       Market.findOne({ marketId: messageDetails.marketId }).then((theMarket) => {
         let newOutcome = new Outcome(messageDetails);
+        delete newOutcome.__v;
         newOutcome.save().then((outcome) => {
           if (theMarket) {
             let outcomes = theMarket.outcomes;
             outcomes.push(outcome._id);
             // theMarket.outcomes.push(outcome._id);
             theMarket.outcomes = outcomes;
-            // return theMarket.save().then().catch(error => console.log(error));
-            return;
+            // removes the VersionError
+            delete theMarket.__v;
+            return theMarket.save().then().catch(error => console.log(error));
+            // return;
           }
           return outcome;
         }).catch((error) => {
