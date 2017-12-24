@@ -170,7 +170,7 @@ var splitArray = (message) => {
   console.log('arrayInitial', arrayInitialSplit);
   // arrayInitialSplit.shift();
   let returnedArray =  [];
-  arrayInitialSplit.map((element, index) => {
+  /* arrayInitialSplit.map((element, index) => {
     if (element.trim() === '\\' || element === '\n' || isUndefined(element)) {
       arrayInitialSplit.splice(index, 1);
     }
@@ -178,7 +178,14 @@ var splitArray = (message) => {
       if (element !== '') {
         returnedArray.push(element);
       }
-    }
+    } 
+  }); */
+  arrayInitialSplit.map((element, index) => {
+    if (element.trim() !== '\\' || element !== '\n' || isUndefined(element)) {
+      if (element !== '') {
+        returnedArray.push(element);
+      } 
+    } 
   });
   return returnedArray;
 };
