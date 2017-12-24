@@ -180,7 +180,7 @@ var splitArray = (message) => {
       }
     } 
   }); */
-  arrayInitialSplit.map((element, index) => {
+  arrayInitialSplit.map((element) => {
     if (element.trim() !== '\\' || element !== '\n' || isUndefined(element)) {
       if (element !== '') {
         returnedArray.push(element);
