@@ -7,6 +7,7 @@ var Event = require('../models/event').Event;
 var Market = require('../models/event').Market;
 var Outcome = require('../models/event').Outcome;
 var isUndefined = require('util').isUndefined;
+var smallerArrays = [];
 
 /**
  * Connects TCP service and saves data to mongodb
@@ -64,13 +65,24 @@ var consumer = (conn, res) => {
         // console.log(msg.content.toString());
         // dataPacket.push(msg.content.toString());
         // split the message into an array
-        console.log('msg.content.toString(): ', msg.content.toString());
         let splitMessageArray = splitArray(msg.content.toString());
+        // console.log('splitMessageArray: ',splitMessageArray);
+        // console.log('splitMessageArray.length: ',splitMessageArray.length);
+
+        // there is a problem here
         let smallerChunks = breakInSmallerArrays(splitMessageArray);
+        // console.log('smallerChunks.length: ',smallerChunks.length);
+        // console.log('smallerChunks: ', smallerChunks);
         smallerChunks.forEach((chunk, index) => {
-          let messageDetails = convertToJson(chunk);
-          console.log('Index: %d messageDetails: : ',index, messageDetails);
-          saveToDatabase(messageDetails);
+          console.log('chunk: ', chunk);
+          let fullMessageDetails = convertToJson(chunk);
+          let messageDetails = {};
+          
+          messageDetails.header = fullMessageDetails.header;
+          messageDetails.body = fullMessageDetails.body; 
+
+          // console.log('Index: %d messageDetails: : ',index, messageDetails);
+          saveToDatabase(messageDetails, fullMessageDetails.dataType);
         });
         ch.ack(msg);
       }
@@ -95,41 +107,43 @@ var consumerService = (req, res) => {
 };
 
 /**
- * Saves the json object ot 
+ * Saves the json object to a database
  * @param {Object} messageDetails
  */
-// var saveToDatabase = (message) => {
-//   let messageDetails = convertToJson(message);
-var saveToDatabase = (messageDetails) => {
-    // messageDetails = convertToJson(message);
-  switch (messageDetails.dataType) {
+var saveToDatabase = (messageDetails, dataType) => {
+  switch (dataType) {
     case 'event': {
       let newEvent = new Event(messageDetails);
       // save the new event
       newEvent.save().then((event) => {
         return event;
       }).catch((error) => {
-        throw new Error(error);
+        // throw new Error(error);
       });
       break;
     }
     case 'market': {
       // push messageDetails data to a db
       // Find a related event and push the market to it
-      Event.findOne({ eventID: messageDetails.eventId }).then((theEvent) => {
-        console.log('EventID: ', messageDetails.eventId);
+      delete messageDetails.dataType;
+      Event.findOne({ eventID: messageDetails.body.eventId }).then((theEvent) => {
+        console.log('EventID: ', JSON.stringify(messageDetails.body.eventId));
+
         let newMarket = new Market(messageDetails);
+
         newMarket.save().then((market) => {
           if (theEvent){
             let markets = theEvent.markets;
             markets.push(market._id);
             // theEvent.markets.push(market._id);
             theEvent.markets = markets;
-            theEvent.save();
+            // return theEvent.save().then().catch(error => console.log(error));
+            return;
           }
           return market;
         }).catch((error) => {
-          throw new Error(error);
+          // throw new Error(error);
+          return;
         });
         return theEvent;
       }).catch((error) => {
@@ -138,6 +152,7 @@ var saveToDatabase = (messageDetails) => {
       break;
     }
     case 'outcome':
+      console.log('messageDetails: ', messageDetails);
       Market.findOne({ marketId: messageDetails.marketId }).then((theMarket) => {
         let newOutcome = new Outcome(messageDetails);
         newOutcome.save().then((outcome) => {
@@ -146,9 +161,10 @@ var saveToDatabase = (messageDetails) => {
             outcomes.push(outcome._id);
             // theMarket.outcomes.push(outcome._id);
             theMarket.outcomes = outcomes;
-            theMarket.save();
+            // return theMarket.save().then().catch(error => console.log(error));
+            return;
           }
-          return theMarket;
+          return outcome;
         }).catch((error) => {
           throw new Error(error);
         });
@@ -166,26 +182,18 @@ var saveToDatabase = (messageDetails) => {
  */
 var splitArray = (message) => {
   message.replace('||', '|').replace('| vs |', ' vs ').replace('||', '|');
+  
   let arrayInitialSplit = message.split('|');
-  console.log('arrayInitial', arrayInitialSplit);
-  // arrayInitialSplit.shift();
   let returnedArray =  [];
-  /* arrayInitialSplit.map((element, index) => {
-    if (element.trim() === '\\' || element === '\n' || isUndefined(element)) {
-      arrayInitialSplit.splice(index, 1);
-    }
-    else {
-      if (element !== '') {
-        returnedArray.push(element);
-      }
-    } 
-  }); */
+
   arrayInitialSplit.map((element) => {
-    if (element.trim() !== '\\' || element !== '\n' || isUndefined(element)) {
-      if (element !== '') {
+    if (element) {
+      if (element === '\\' || element === '\n' || element === '' ) {
+        return;
+      } else {
         returnedArray.push(element);
       } 
-    } 
+    }
   });
   return returnedArray;
 };
@@ -195,26 +203,23 @@ var splitArray = (message) => {
  * @param {Array} largeArray 
  */
 var breakInSmallerArrays = (largeArray) => {
-  let smallerArrays = [];
   // get the first 9 items if they include market 
   // let firstNine = largeArray.slice
   if (largeArray.includes('market') && largeArray.length > 9) {
-    let i = 0;
-    while ( i < largeArray.length ) {
-      let arrayChunk = largeArray.slice(i, i + 9);
-      i = i + 9; 
-      smallerArrays.push(arrayChunk);
-      largeArray.splice(i, i + 9);
+    let i = largeArray.indexOf('market');
+    let arrayChunk = largeArray.slice(i - 2, i + 7); 
+    smallerArrays.push(arrayChunk);
+    largeArray.splice(i - 2, i + 7);
+    if (largeArray.lenght > 0) {
       breakInSmallerArrays(largeArray);
     }
   }
   else if (largeArray.includes('outcome') && largeArray.length > 10) {
-    let i = 0;
-    while ( i < largeArray.length ) {
-      let arrayChunk = largeArray.slice(i, i + 10);
-      i = i + 10; 
-      smallerArrays.push(arrayChunk);
-      largeArray.splice(i, i + 10);
+    let i = largeArray.indexOf('outcome');
+    let arrayChunk = largeArray.slice(i - 2 , i + 8);
+    smallerArrays.push(arrayChunk);
+    largeArray.splice(i - 2 , i + 8);
+    if (largeArray.lenght > 0) {
       breakInSmallerArrays(largeArray);
     }
   }
