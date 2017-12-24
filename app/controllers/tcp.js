@@ -6,6 +6,7 @@ var net = require('net');
 var Event = require('../models/event').Event;
 var Market = require('../models/event').Market;
 var Outcome = require('../models/event').Outcome;
+var isUndefined = require('util').isUndefined;
 
 /**
  * Connects TCP service and saves data to mongodb
@@ -62,9 +63,15 @@ var consumer = (conn, res) => {
       if (msg !== null) {
         // console.log(msg.content.toString());
         // dataPacket.push(msg.content.toString());
-        let messageDetails = convertToJson(msg.content.toString());
-        // saveToDatabase(msg);
-        saveToDatabase(messageDetails);
+        // split the message into an array
+        console.log('msg.content.toString(): ', msg.content.toString());
+        let splitMessageArray = splitArray(msg.content.toString());
+        let smallerChunks = breakInSmallerArrays(splitMessageArray);
+        smallerChunks.forEach((chunk, index) => {
+          let messageDetails = convertToJson(chunk);
+          console.log('Index: %d messageDetails: : ',index, messageDetails);
+          saveToDatabase(messageDetails);
+        });
         ch.ack(msg);
       }
     }, { noAck: false });
@@ -89,7 +96,7 @@ var consumerService = (req, res) => {
 
 /**
  * Saves the json object ot 
- * @param {Object} message 
+ * @param {Object} messageDetails
  */
 // var saveToDatabase = (message) => {
 //   let messageDetails = convertToJson(message);
@@ -126,7 +133,6 @@ var saveToDatabase = (messageDetails) => {
         });
         return theEvent;
       }).catch((error) => {
-        console.log('see');
         throw new Error(error);
       });
       break;
@@ -161,30 +167,67 @@ var saveToDatabase = (messageDetails) => {
 var splitArray = (message) => {
   message.replace('||', '|').replace('| vs |', ' vs ').replace('||', '|');
   let arrayInitialSplit = message.split('|');
-  arrayInitialSplit.shift();
-  let returnedArray = arrayInitialSplit.map((element, index) => {
-    if (!element || element === '\\' || element === '\n') {
+  console.log('arrayInitial', arrayInitialSplit);
+  // arrayInitialSplit.shift();
+  let returnedArray =  [];
+  arrayInitialSplit.map((element, index) => {
+    if (element.trim() === '\\' || element === '\n' || isUndefined(element)) {
       arrayInitialSplit.splice(index, 1);
     }
+    else {
+      if (element !== '') {
+        returnedArray.push(element);
+      }
+    }
   });
-  console.log('arrayInitial: ', arrayInitialSplit);
   return returnedArray;
 };
 /**
- * Converts String to JSON from pipe delimiter
- * @param {String} message 
+ * Split Message Array into smaller chunks
+ * Because sometimes messaages arrive twice
+ * @param {Array} largeArray 
+ */
+var breakInSmallerArrays = (largeArray) => {
+  let smallerArrays = [];
+  // get the first 9 items if they include market 
+  // let firstNine = largeArray.slice
+  if (largeArray.includes('market') && largeArray.length > 9) {
+    let i = 0;
+    while ( i < largeArray.length ) {
+      let arrayChunk = largeArray.slice(i, i + 9);
+      i = i + 9; 
+      smallerArrays.push(arrayChunk);
+      largeArray.splice(i, i + 9);
+      breakInSmallerArrays(largeArray);
+    }
+  }
+  else if (largeArray.includes('outcome') && largeArray.length > 10) {
+    let i = 0;
+    while ( i < largeArray.length ) {
+      let arrayChunk = largeArray.slice(i, i + 10);
+      i = i + 10; 
+      smallerArrays.push(arrayChunk);
+      largeArray.splice(i, i + 10);
+      breakInSmallerArrays(largeArray);
+    }
+  }
+  else {
+    smallerArrays.push(largeArray);
+  }
+  return smallerArrays;
+};
+/**
+ * Converts String to JSON
+ * @param {Array} eventData 
  * @returns Object
  */
-var convertToJson = (message) => {
-  let eventData = splitArray(message);
-  eventData.map((element, index) => {
-    console.log('%d: ', index, JSON.stringify(element));
-  });
+var convertToJson = (eventData) => {
   let dataType = '';
-  if (message.indexOf('event') != -1) {
+
+  if (eventData.includes('event')) {
     dataType = 'event';
   }
-  else if (message.indexOf('market') != -1) {
+  else if (eventData.includes('market')) {
     dataType = 'market';
   }
   else {
@@ -195,85 +238,80 @@ var convertToJson = (message) => {
   eventJSONData.header = {};
   eventJSONData.body = {};
   eventData.forEach((element, index) => {
-    if (!element || element.trim() === '\\' || element.trim() === '') {
-      eventData.splice(index, 1);
-    }
-    else {
-      switch (index) {
-        case 0:
-          eventJSONData.header.msgId = element;
-          break;
-        case 1:
-          eventJSONData.header.operation = element;
-          break;
-        case 2:
-          eventJSONData.header.type = element;
-          break;
-        case 3:
-          eventJSONData.header.timestamp = element;
-          break;
-        case 4:
-          if (dataType === 'outcome')
-          {
-            eventJSONData.body.marketId = element;
-          }
-          else {
-            eventJSONData.body.eventId = element;          
-          }
-          break;
-        case 5:
-          if (dataType === 'market') {
-            eventJSONData.body.marketId = element;
-          }
-          else if (dataType === 'outcome') {
-            eventJSONData.body.eventId = element;
-          }
-          else {
-            eventJSONData.body.category = element;
-          }
-          break;
-        case 6:
-          if ((dataType) ? 'market' : 'outcome') {
-            eventJSONData.body.name = element;
-          }
-          else {
-            eventJSONData.body.subCategory = element;
-          }
-          break;
-        case 7:
-          if (dataType === 'market') {
-            eventJSONData.body.displayed = element;
-          }
-          else if (dataType === 'outcome') {
-            eventJSONData.body.price = element;
-          }
-          else {
-            eventJSONData.body.name = element;
-          }
-          break;
-        case 8:
-          if (dataType === 'market') {
-            eventJSONData.body.suspended = element;
-          }
-          else if (dataType === 'outcome') {
-            eventJSONData.body.displayed = element;
-          }
-          else {
-            eventJSONData.body.startTime = element;
-          }
-          break;
-        case 9:
-          if (dataType === 'outcome') {
-            eventJSONData.body.suspended = element;
-          }
-          else if (dataType !== 'market'){
-            eventJSONData.body.displayed = element;
-          }
-          break;
-        case 10:
+    switch (index) {
+      case 0:
+        eventJSONData.header.msgId = element;
+        break;
+      case 1:
+        eventJSONData.header.operation = element;
+        break;
+      case 2:
+        eventJSONData.header.type = element;
+        break;
+      case 3:
+        eventJSONData.header.timestamp = element;
+        break;
+      case 4:
+        if (dataType === 'outcome')
+        {
+          eventJSONData.body.marketId = element;
+        }
+        else {
+          eventJSONData.body.eventId = element;          
+        }
+        break;
+      case 5:
+        if (dataType === 'market') {
+          eventJSONData.body.marketId = element;
+        }
+        else if (dataType === 'outcome') {
+          eventJSONData.body.eventId = element;
+        }
+        else {
+          eventJSONData.body.category = element;
+        }
+        break;
+      case 6:
+        if ((dataType) ? 'market' : 'outcome') {
+          eventJSONData.body.name = element;
+        }
+        else {
+          eventJSONData.body.subCategory = element;
+        }
+        break;
+      case 7:
+        if (dataType === 'market') {
+          eventJSONData.body.displayed = element;
+        }
+        else if (dataType === 'outcome') {
+          eventJSONData.body.price = element;
+        }
+        else {
+          eventJSONData.body.name = element;
+        }
+        break;
+      case 8:
+        if (dataType === 'market') {
           eventJSONData.body.suspended = element;
-          break;
-      }
+        }
+        else if (dataType === 'outcome') {
+          eventJSONData.body.displayed = element;
+        }
+        else {
+          eventJSONData.body.startTime = element;
+        }
+        break;
+      case 9:
+        if (dataType === 'outcome') {
+          eventJSONData.body.suspended = element;
+        }
+        else if (dataType !== 'market'){
+          eventJSONData.body.displayed = element;
+        }
+        break;
+      case 10:
+        eventJSONData.body.suspended = element;
+        break;
     }
   });
   return eventJSONData;
